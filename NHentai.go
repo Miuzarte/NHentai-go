@@ -83,12 +83,12 @@ func (t Tags) Namespaces() (namespaces []string) {
 	for i := range t {
 		namespaces[i] = t[i].Type
 	}
-	s := make(utils.Set[string])
+	s := utils.Set[string]{}
 	return s.Clean(namespaces)
 }
 
 func (t Tags) Set() (ts []TagSet) {
-	setPos := make(map[string]int)
+	setPos := map[string]int{}
 	for _, tag := range t {
 		i, ok := setPos[tag.Type]
 		if !ok {

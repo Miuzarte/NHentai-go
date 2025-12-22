@@ -67,6 +67,8 @@ func getFullType(t string) string {
 		return "webp"
 	case 'j': // ?
 		return "jpg"
+	case 'p':
+		return "png"
 	default:
 		panic(fmt.Errorf("[TODO] unknown t: %s", t))
 	}

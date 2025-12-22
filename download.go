@@ -33,7 +33,7 @@ func (it ImageType) String() string {
 }
 
 type Image struct {
-	Name string // "1.webp"
+	Name string // "1.webp" | "1t.webp" | "cover.webp"
 	P    int
 	Data []byte
 	Type ImageType
@@ -66,7 +66,7 @@ func newCoversDownload(gs Gallerys) (dls []*download) {
 		dls[i] = &download{
 			img: &Image{
 				Name: gs[i].CoverFilename(),
-				// P: i + 1,
+				P:    i + 1,
 			},
 			url: gs[i].CoverUrl(),
 			err: make(chan error, 1),
