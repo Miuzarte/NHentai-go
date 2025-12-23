@@ -65,11 +65,11 @@ func getFullType(t string) string {
 	switch t[0] {
 	case 'w':
 		return "webp"
-	case 'j': // ?
+	case 'j':
 		return "jpg"
 	case 'p':
 		return "png"
 	default:
-		panic(fmt.Errorf("[TODO] unknown t: %s", t))
+		panic(fmt.Errorf("[FIXME] unknown t: %s", t))
 	}
 }

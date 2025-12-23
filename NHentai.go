@@ -15,7 +15,7 @@ const API_URL = "https://nhentai.net"
 var ApiUrl = API_URL
 
 // 负载均衡到所有 cdn
-var UP UrlProviderType = &urlProvider{}
+var hp HostProvider = &hostProvider{}
 
 const (
 	API_SEARCH        = "/api/galleries/search"
@@ -26,18 +26,15 @@ const (
 type Sort = string
 
 const (
-	SORT_POPULAR = "popular"
-	SORT_DATE    = "date"
+	SORT_POPULAR Sort = "popular"
+	SORT_DATE    Sort = "date"
 )
 
 var threads = 4 // 下载并发数
 
 // SetThreads 设置下载并发数
 func SetThreads(n int) {
-	if n <= 0 {
-		n = 1
-	}
-	threads = n
+	threads = max(1, n)
 }
 
 // SetUseEnvProxy 设置是否使用系统环境变量中的代理
@@ -50,6 +47,11 @@ func SetUseEnvProxy(b bool) {
 	} else {
 		ht.Proxy = nil
 	}
+}
+
+// SetCustomHostProvider 自定义 cdn 主机名轮询
+func SetCustomHostProvider(hostProvider HostProvider) {
+	hp = hostProvider
 }
 
 type ImageInfo struct {
@@ -136,18 +138,22 @@ type Gallery struct {
 
 type Gallerys []*Gallery
 
+// DownloadCoversIter downloads search result covers using iterator
 func (gs Gallerys) DownloadCoversIter(ctx context.Context) iter.Seq2[Image, error] {
 	return newDownloader(ctx, newCoversDownload(gs)).downloadIter()
 }
 
+// DownloadThumbsIter downloads gallery thumbs using iterator
 func (g *Gallery) DownloadThumbsIter(ctx context.Context) iter.Seq2[Image, error] {
 	return newDownloader(ctx, newThumbsDownload(g)).downloadIter()
 }
 
+// DownloadPagesIter downloads gallery images using iterator
 func (g *Gallery) DownloadPagesIter(ctx context.Context) iter.Seq2[Image, error] {
 	return newDownloader(ctx, newPagesDownload(g)).downloadIter()
 }
 
+// GetGallery gets gallery info by book id
 func GetGallery(ctx context.Context, bookId int) (*Gallery, error) {
 	url := toUrl(ApiUrl)
 	url.Path = path.Join(API_GALLERY, strconv.Itoa(bookId))
@@ -159,14 +165,20 @@ func (g *Gallery) PageFilename(i int) string {
 	return strconv.Itoa(i+1) + "." + getFullType(g.Images.Pages[i].T)
 }
 
-func (g *Gallery) PageUrl(i int) string {
-	return UP.NextImageUrl() + path.Join(
-		"/galleries",
-		g.MediaId,
-		g.PageFilename(i),
-	)
+func (g *Gallery) PagePath(i int) string {
+	return path.Join("/galleries", g.MediaId, g.PageFilename(i))
 }
 
+// PageUrl does not provide a fixed "host"
+//
+// Consider using [Gallery.PagePath]
+func (g *Gallery) PageUrl(i int) string {
+	return hp.NextImageHost() + g.PagePath(i)
+}
+
+// PageUrlsIter does not provide a fixed "host"
+//
+// Consider using [Gallery.PagePath]
 func (g *Gallery) PageUrlsIter() iter.Seq2[int, string] {
 	return func(yield func(int, string) bool) {
 		for i := range g.Images.Pages {
@@ -177,6 +189,9 @@ func (g *Gallery) PageUrlsIter() iter.Seq2[int, string] {
 	}
 }
 
+// PageUrls does not provide a fixed "host"
+//
+// Consider using [Gallery.PagePath]
 func (g *Gallery) PageUrls() []string {
 	urls := make([]string, 0, len(g.Images.Pages))
 	for i := range g.Images.Pages {
@@ -189,14 +204,20 @@ func (g *Gallery) ThumbFilename(i int) string {
 	return strconv.Itoa(i+1) + "t" + "." + getFullType(g.Images.Pages[i].T)
 }
 
-func (g *Gallery) ThumbUrl(i int) string {
-	return UP.NextThumbUrl() + path.Join(
-		"/galleries",
-		g.MediaId,
-		g.ThumbFilename(i),
-	)
+func (g *Gallery) ThumbPath(i int) string {
+	return path.Join("/galleries", g.MediaId, g.ThumbFilename(i))
 }
 
+// ThumbUrl does not provide a fixed "host"
+//
+// Consider using [Gallery.ThumbPath]
+func (g *Gallery) ThumbUrl(i int) string {
+	return hp.NextThumbHost() + g.ThumbPath(i)
+}
+
+// ThumbUrlsIter does not provide a fixed "host"
+//
+// Consider using [Gallery.ThumbPath]
 func (g *Gallery) ThumbUrlsIter() iter.Seq2[int, string] {
 	return func(yield func(int, string) bool) {
 		for i := range g.Images.Pages {
@@ -207,6 +228,9 @@ func (g *Gallery) ThumbUrlsIter() iter.Seq2[int, string] {
 	}
 }
 
+// ThumbUrls does not provide a fixed "host"
+//
+// Consider using [Gallery.ThumbPath]
 func (g *Gallery) ThumbUrls() []string {
 	urls := make([]string, 0, len(g.Images.Pages))
 	for i := range g.Images.Pages {
@@ -219,14 +243,18 @@ func (g *Gallery) CoverFilename() string {
 	return "cover" + "." + getFullType(g.Images.Cover.T)
 }
 
-func (g *Gallery) CoverUrl() string {
-	return UP.NextThumbUrl() + path.Join(
-		"/galleries",
-		g.MediaId,
-		g.CoverFilename(),
-	)
+func (g *Gallery) CoverPath() string {
+	return path.Join("/galleries", g.MediaId, g.CoverFilename())
 }
 
+// CoverUrl does not provide a fixed "host"
+//
+// Consider using [Gallery.CoverPath]
+func (g *Gallery) CoverUrl() string {
+	return hp.NextThumbHost() + g.CoverPath()
+}
+
+// GetRelated querys "More Like This"
 func (g *Gallery) GetRelated(ctx context.Context) (Gallerys, error) {
 	type RelatedResp struct {
 		Result Gallerys `json:"result"`
@@ -248,6 +276,7 @@ type SearchResp struct {
 	PerPage  int      `json:"per_page"`
 }
 
+// Search searches
 func Search(ctx context.Context, query string, page int, sort Sort) (*SearchResp, error) {
 	url := toUrl(ApiUrl)
 	url.Path = API_SEARCH
@@ -265,12 +294,12 @@ func Search(ctx context.Context, query string, page int, sort Sort) (*SearchResp
 	return getAndUnmarshalTo[SearchResp](ctx, url.String(), nil)
 }
 
-func SearchTagged(ctx context.Context, tag_id int, page int, sort Sort) (*SearchResp, error) {
+func SearchTagged(ctx context.Context, tagId int, page int, sort Sort) (*SearchResp, error) {
 	url := toUrl(ApiUrl)
 	url.Path = API_SEARCH_TAGGED
 
 	q := url.Query()
-	q.Add("tag_id", strconv.Itoa(tag_id))
+	q.Add("tag_id", strconv.Itoa(tagId))
 	if page > 0 {
 		q.Add("page", strconv.Itoa(page))
 	}
