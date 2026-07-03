@@ -256,14 +256,14 @@ func (g *Gallery) CoverUrl() string {
 
 // GetRelated querys "More Like This"
 func (g *Gallery) GetRelated(ctx context.Context) (Gallerys, error) {
-	type RelatedResp struct {
+	type response struct {
 		Result Gallerys `json:"result"`
 	}
 
 	url := toUrl(ApiUrl)
 	url.Path = path.Join(API_GALLERY, strconv.Itoa(g.Id), "related")
 
-	r, err := getAndUnmarshalTo[RelatedResp](ctx, url.String(), nil)
+	r, err := getAndUnmarshalTo[response](ctx, url.String(), nil)
 	if err != nil {
 		return nil, err
 	}

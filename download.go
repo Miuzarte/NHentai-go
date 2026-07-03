@@ -141,8 +141,8 @@ func (dl *downloader) startBackground() {
 }
 
 func (dl *downloader) downloadIter() iter.Seq2[Image, error] {
-	dl.startBackground()
 	return func(yield func(Image, error) bool) {
+		dl.startBackground()
 		defer dl.cancel()
 		for _, item := range dl.items {
 			if !yield(*item.img, <-item.err) {
