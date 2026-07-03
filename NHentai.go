@@ -2,55 +2,54 @@ package NHentai
 
 import (
 	"context"
-	"iter"
+	"fmt"
 	"net/http"
-	"path"
 	"strconv"
 	"strings"
 
-	"github.com/Miuzarte/NHentai-go/internal/utils"
+	"github.com/Miuzarte/NHentai-go/api"
+	"github.com/Miuzarte/NHentai-go/downloader"
 )
 
 const API_URL = "https://nhentai.net"
 
-var ApiUrl = API_URL
+var apiUrl = API_URL
 
-// UserAgent 设置请求的 User-Agent,
+func SetApiUrl(url string) {
+	if url != "" {
+		apiUrl = url
+	}
+}
+
+const DEFAULT_USER_AGENT = "NHentai-go/0.0.0 (https://github.com/Miuzarte/NHentai-go)"
+
+// userAgent 设置请求的 User-Agent,
 // 默认值符合 nhentai API 文档要求
-var UserAgent = "NHentai-go/0.0.0 (https://github.com/Miuzarte/NHentai-go)"
+var userAgent = DEFAULT_USER_AGENT
 
-// ApiKey 用于 Authorization: Key <ApiKey>,
+// SetUserAgent 设置请求的 User-Agent,
+// 符合 nhentai API 文档要求
+// 建议格式: `AppName/version (contact or project URL)`
+func SetUserAgent(ua string) {
+	userAgent = ua
+}
+
+// apiKey 用于 Authorization: Key <apiKey>,
 // 留空则不发送该 header
-var ApiKey string
+var apiKey string
 
-var defaultHostProvider = &hostProvider{}
-
-// 负载均衡到所有 cdn
-var hp HostProvider = defaultHostProvider
-
-const (
-	API_SEARCH        = "/api/v2/search"
-	API_SEARCH_TAGGED = "/api/v2/galleries/tagged" // [TODO] figure out v2 api path
-	API_GALLERY       = "/api/v2/galleries"        // /{id}
-	API_TAG_LOOKUP    = "/api/v2/tags/ids"         // ?ids=1,2,3
-
-	// API_TAG_TYPE = "/api/v2/tags" // /{type}?sort=name
-)
-
-type Sort = string
-
-const (
-	SORT_DATE          Sort = "date"          // "Recent"
-	SORT_POPULAR       Sort = "popular"       // "Popular: all time"
-	SORT_POPULAR_WEEK  Sort = "popular-week"  // "Popular: week"
-	SORT_POPULAR_TODAY Sort = "popular-today" // "Popular: today"
-)
+// SetApiKey 设置 API Key,用于 Authorization: Key <apiKey> header
+// 留空则不发送该 header
+func SetApiKey(key string) {
+	apiKey = key
+}
 
 var threads = 4 // 下载并发数
 
 // SetThreads 设置下载并发数
 func SetThreads(n int) {
 	threads = max(1, n)
+	api.DownloadThreads = threads
 }
 
 // SetUseEnvProxy 设置是否使用系统环境变量中的代理
@@ -65,6 +64,11 @@ func SetUseEnvProxy(b bool) {
 	}
 }
 
+var defaultHostProvider = &hostProvider{}
+
+// 负载均衡到所有 cdn
+var hp HostProvider = defaultHostProvider
+
 // SetCustomHostProvider 自定义 cdn 主机名轮询
 func SetCustomHostProvider(hostProvider HostProvider) {
 	if hostProvider == nil {
@@ -74,361 +78,164 @@ func SetCustomHostProvider(hostProvider HostProvider) {
 	hp = hostProvider
 }
 
-// [TODO] 尝试兼容 [EHentai.TranslateMulti]
-// 处理 "tag" 域
-type Tag struct {
-	Id    int    `json:"id"`
-	Type  string `json:"type"` // "tag" | "language" | "category" | "parody" | "artist" | "group" ... // [TODO] TagSet type
-	Name  string `json:"name"`
-	Slug  string `json:"slug"` // == {.Name} ?
-	Url   string `json:"url"`  // "/{.Type}/{.Name}"
-	Count int    `json:"count"`
+// Sort is a handy alias of [api.SearchGalleriesApiV2SearchGetParamsSort]
+type Sort = string
 
-	Description *string `json:"description"` // only in [API_TAG_LOOKUP]
+const (
+	// SORT_DATE is an alias of [api.SearchGalleriesApiV2SearchGetParamsSortDate]
+	SORT_DATE Sort = "date" // "Recent"
 
-	// IsCommunity *any `json:"is_community"`
-	// PendingDescribeId *any `json:"pending_describe_id"`
-}
+	// SORT_POPULAR is an alias of [api.SearchGalleriesApiV2SearchGetParamsSortPopular]
+	SORT_POPULAR Sort = "popular" // "Popular: all time"
 
-func (t Tag) String() string {
-	return t.Type + ":" + t.Name
-}
+	// SORT_POPULAR_MONTH is an alias of [api.SearchGalleriesApiV2SearchGetParamsSortPopularMonth]
+	SORT_POPULAR_MONTH Sort = "popular-month" // "Popular: month"
 
-func (t Tag) Search(ctx context.Context, page int, sort Sort) (*SearchResp, error) {
-	return SearchTagged(ctx, t.Id, page, sort)
-}
+	// SORT_POPULAR_TODAY is an alias of [api.SearchGalleriesApiV2SearchGetParamsSortPopularToday]
+	SORT_POPULAR_TODAY Sort = "popular-today" // "Popular: today"
 
-type Tags []Tag
+	// SORT_POPULAR_WEEK is an alias of [api.SearchGalleriesApiV2SearchGetParamsSortPopularWeek]
+	SORT_POPULAR_WEEK Sort = "popular-week" // "Popular: week"
+)
 
-func (t Tags) Namespaces() (namespaces []string) {
-	namespaces = make([]string, len(t))
-	for i := range t {
-		namespaces[i] = t[i].Type
+var apiClient *api.ClientWithResponses
+
+// requestEditor 注入 User-Agent 与 ApiKey header
+func requestEditor(ctx context.Context, req *http.Request) error {
+	if userAgent != "" {
+		req.Header.Set("User-Agent", userAgent)
 	}
-	s := utils.Set[string]{}
-	return s.Clean(namespaces)
-}
-
-func (t Tags) Set() (ts []TagSet) {
-	setPos := map[string]int{}
-	for _, tag := range t {
-		i, ok := setPos[tag.Type]
-		if !ok {
-			i = len(ts)
-			setPos[tag.Type] = i
-			ts = append(ts, TagSet{Namespace: tag.Type})
-		}
-		ts[i].Tags = append(ts[i].Tags, tag.Name)
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Key "+apiKey)
 	}
-	return ts
+	return nil
 }
 
-type TagSet struct {
-	Namespace string
-	Tags      []string
-}
-
-func (ts Tags) Strings() []string {
-	ss := make([]string, 0, len(ts))
-	for _, tag := range ts {
-		ss = append(ss, tag.String())
+// initApiClient 创建全局 apiClient;init 时调用,也供 ApiUrl 变更后重建
+func initApiClient() error {
+	c, err := api.NewClientWithResponses(apiUrl,
+		api.WithHTTPClient(&httpClient),
+		api.WithRequestEditorFn(requestEditor),
+	)
+	if err != nil {
+		return err
 	}
-	return ss
+	apiClient = c
+	return nil
 }
 
-func LookupTags(ctx context.Context, ids ...int) (Tags, error) {
-	if len(ids) == 0 {
-		return nil, nil
+// ReinitClient 重建 apiClient,在修改 ApiUrl 后调用
+func ReinitClient() error {
+	return initApiClient()
+}
+
+func init() {
+	// 注入 host provider 给 api 包
+	// 闭包捕获 hp 变量, SetCustomHostProvider 更改 hp 后自动生效
+	api.NextImageHostFn = func() string { return hp.NextImageHost() }
+	api.NextThumbHostFn = func() string { return hp.NextThumbHost() }
+	api.DownloadThreads = threads
+	downloader.RequestEditor = requestEditor
+	downloader.HttpClient = &httpClient
+	if err := initApiClient(); err != nil {
+		panic(err)
 	}
-
-	url := toUrl(ApiUrl)
-	url.Path = API_TAG_LOOKUP
-
-	q := url.Query()
-	for _, id := range ids {
-		q.Add("ids", strconv.Itoa(id))
-	}
-	url.RawQuery = q.Encode()
-
-	return getAndUnmarshalToSlice[Tags](ctx, url.String(), nil)
-}
-
-type ImageInfo struct {
-	T string `json:"t"` // type // "w"
-	W int    `json:"w"`
-	H int    `json:"h"`
-}
-
-type ImageInfoBase struct {
-	Path   string `json:"path"` // "galleries/{MediaId}/cover.webp" | "galleries/3138775/thumb.webp"
-	Width  int    `json:"width"`
-	Height int    `json:"height"`
-}
-
-type Page struct {
-	Number          int    // 1
-	Path            string // "galleries/{MediaId}/1.webp"
-	Width           int
-	Height          int
-	Thumbnail       string // "galleries/{MediaId}/1t.webp"
-	ThumbnailWidth  int
-	ThumbnailHeight int
-}
-
-type Gallery struct {
-	Id      int    `json:"id"`
-	MediaId string `json:"media_id"`
-	Title   struct {
-		English  string `json:"english"`
-		Japanese string `json:"japanese"`
-		Pretty   string `json:"pretty"`
-	} `json:"title"`
-	Cover        ImageInfoBase `json:"cover"`
-	Thumbnail    ImageInfoBase `json:"thumbnail"`
-	Scanlator    string        `json:"scanlator"`   // scan + translator
-	UploadDate   int           `json:"upload_date"` // ts in second
-	Tags         Tags          `json:"tags"`
-	NumPages     int           `json:"num_pages"`
-	NumFavorites int           `json:"num_favorites"`
-	Pages        []Page        `json:"pages"`
-}
-
-/*
-type Gallerys []*Gallery
-
-// DownloadCoversIter downloads search result covers using iterator
-func (gs Gallerys) DownloadCoversIter(ctx context.Context) iter.Seq2[Image, error] {
-	return newDownloader(ctx, newCoversDownload(gs)).downloadIter()
-}
-*/
-
-// DownloadThumbsIter downloads gallery thumbs using iterator
-func (g *Gallery) DownloadThumbsIter(ctx context.Context) iter.Seq2[Image, error] {
-	return newDownloader(ctx, g.newThumbsDownload()).downloadIter()
-}
-
-// DownloadPagesIter downloads gallery images using iterator
-func (g *Gallery) DownloadPagesIter(ctx context.Context) iter.Seq2[Image, error] {
-	return newDownloader(ctx, g.newPagesDownload()).downloadIter()
 }
 
 // GetGallery gets gallery info by book id
-func GetGallery(ctx context.Context, bookId int) (*Gallery, error) {
-	url := toUrl(ApiUrl)
-	url.Path = path.Join(API_GALLERY, strconv.Itoa(bookId))
-
-	return getAndUnmarshalTo[Gallery](ctx, url.String(), nil)
-}
-
-// count from 0
-func (g *Gallery) PageFilename(i int) string {
-	// return strconv.Itoa(i+1) + "." + getFullType(g.Images.Pages[i].T)
-	return path.Base(g.Pages[i].Path)
-}
-
-func (g *Gallery) PagePath(i int) string {
-	// return path.Join("/galleries", g.MediaId, g.PageFilename(i))
-	// 保持原先行为, 带上前导斜杠
-	return "/" + g.Pages[i].Path
-}
-
-// PageUrl does not provide a fixed "host"
-//
-// Consider using [Gallery.PagePath]
-func (g *Gallery) PageUrl(i int) string {
-	path := g.PagePath(i)
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-	return hp.NextImageHost() + path
-}
-
-// PageUrlsIter does not provide a fixed "host"
-//
-// Consider using [Gallery.PagePath]
-func (g *Gallery) PageUrlsIter() iter.Seq2[int, string] {
-	return func(yield func(int, string) bool) {
-		for i := range g.Pages {
-			if !yield(i, g.PageUrl(i)) {
-				return
-			}
-		}
-	}
-}
-
-// PageUrls does not provide a fixed "host"
-//
-// Consider using [Gallery.PagePath]
-func (g *Gallery) PageUrls() []string {
-	urls := make([]string, 0, len(g.Pages))
-	for i := range g.Pages {
-		urls = append(urls, g.PageUrl(i))
-	}
-	return urls
-}
-
-func (g *Gallery) ThumbFilename(i int) string {
-	// return strconv.Itoa(i+1) + "t" + "." + getFullType(g.Images.Pages[i].T)
-	return path.Base(g.Pages[i].Thumbnail)
-}
-
-func (g *Gallery) ThumbPath(i int) string {
-	// return path.Join("/galleries", g.MediaId, g.ThumbFilename(i))
-	return "/" + g.Pages[i].Thumbnail
-}
-
-// ThumbUrl does not provide a fixed "host"
-//
-// Consider using [Gallery.ThumbPath]
-func (g *Gallery) ThumbUrl(i int) string {
-	path := g.ThumbPath(i)
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-	return hp.NextThumbHost() + path
-}
-
-// ThumbUrlsIter does not provide a fixed "host"
-//
-// Consider using [Gallery.ThumbPath]
-func (g *Gallery) ThumbUrlsIter() iter.Seq2[int, string] {
-	return func(yield func(int, string) bool) {
-		for i := range g.Pages {
-			if !yield(i, g.ThumbUrl(i)) {
-				return
-			}
-		}
-	}
-}
-
-// ThumbUrls does not provide a fixed "host"
-//
-// Consider using [Gallery.ThumbPath]
-func (g *Gallery) ThumbUrls() []string {
-	urls := make([]string, 0, len(g.Pages))
-	for i := range g.Pages {
-		urls = append(urls, g.ThumbUrl(i))
-	}
-	return urls
-}
-
-func (g *Gallery) CoverFilename() string {
-	// return "cover" + "." + getFullType(g.Images.Cover.T)
-	return path.Base(g.Cover.Path)
-}
-
-func (g *Gallery) CoverPath() string {
-	// return path.Join("/galleries", g.MediaId, g.CoverFilename())
-	return "/" + g.Cover.Path
-}
-
-// CoverUrl does not provide a fixed "host"
-//
-// Consider using [Gallery.CoverPath]
-func (g *Gallery) CoverUrl() string {
-	path := g.CoverPath()
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-	return hp.NextThumbHost() + path
-}
-
-// GetRelated querys "More Like This"
-func (g *Gallery) GetRelated(ctx context.Context) (GallerySearchResults, error) {
-	type response struct {
-		Result GallerySearchResults `json:"result"`
-	}
-
-	url := toUrl(ApiUrl)
-	url.Path = path.Join(API_GALLERY, strconv.Itoa(g.Id), "related")
-
-	r, err := getAndUnmarshalTo[response](ctx, url.String(), nil)
+func GetGallery(ctx context.Context, bookId int) (*api.GalleryDetailResponse, error) {
+	resp, err := apiClient.GetGalleryApiV2GalleriesGalleryIdGetWithResponse(ctx, bookId, nil)
 	if err != nil {
 		return nil, err
 	}
-	return r.Result, nil
-}
-
-type GallerySearchResult struct {
-	Id              int    `json:"id"`
-	MediaId         string `json:"media_id"`
-	EnglishTitle    string `json:"english_title"`
-	JapaneseTitle   string `json:"japanese_title"`
-	Thumbnail       string `json:"thumbnail"` // "galleries/3138775/thumb.webp"
-	ThumbnailWidth  int    `json:"thumbnail_width"`
-	ThumbnailHeight int    `json:"thumbnail_height"`
-	NumPages        int    `json:"num_pages"`
-	NumFavorites    int    `json:"num_favorites"`
-	TagIds          []int  `json:"tag_ids"`
-	Blacklisted     bool   `json:"blacklisted"`
-}
-
-func (g *GallerySearchResult) ThumbFilename() string {
-	return path.Base(g.Thumbnail)
-}
-
-func (g *GallerySearchResult) ThumbPath() string {
-	return "/" + g.Thumbnail
-}
-
-func (g *GallerySearchResult) ThumbUrl() string {
-	path := g.ThumbPath()
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("unexpected status: %s", resp.Status())
 	}
-	return hp.NextThumbHost() + path
-}
-
-func (g *GallerySearchResult) LookupTags(ctx context.Context) (Tags, error) {
-	return LookupTags(ctx, g.TagIds...)
-}
-
-type GallerySearchResults []GallerySearchResult
-
-// DownloadCoversIter downloads search result covers using iterator
-func (gs GallerySearchResults) DownloadCoversIter(ctx context.Context) iter.Seq2[Image, error] {
-	return newDownloader(ctx, gs.newThumbsDownload()).downloadIter()
-}
-
-type SearchResp struct {
-	Result   GallerySearchResults `json:"result"`
-	NumPages int                  `json:"num_pages"`
-	PerPage  int                  `json:"per_page"`
-	Total    int                  `json:"total"`
+	return resp.JSON200, nil
 }
 
 // Search searches
-func Search(ctx context.Context, query string, page int, sort Sort) (*SearchResp, error) {
-	url := toUrl(ApiUrl)
-	url.Path = API_SEARCH
-
-	q := url.Query()
-	q.Add("query", query)
-	if page > 0 {
-		q.Add("page", strconv.Itoa(page))
-	}
+func Search(ctx context.Context, query string, page int, sort Sort) (*api.PaginatedResponseGalleryListItem, error) {
+	var sortParam *api.SearchGalleriesApiV2SearchGetParamsSort
 	if sort != "" {
-		q.Add("sort", sort)
+		s := api.SearchGalleriesApiV2SearchGetParamsSort(sort)
+		sortParam = &s
 	}
-	url.RawQuery = q.Encode()
-
-	return getAndUnmarshalTo[SearchResp](ctx, url.String(), nil)
+	var pageParam *int
+	if page > 0 {
+		pageParam = &page
+	}
+	params := api.SearchGalleriesApiV2SearchGetParams{
+		Query: query,
+		Sort:  sortParam,
+		Page:  pageParam,
+	}
+	resp, err := apiClient.SearchGalleriesApiV2SearchGetWithResponse(ctx, &params)
+	if err != nil {
+		return nil, err
+	}
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("unexpected status: %s", resp.Status())
+	}
+	return resp.JSON200, nil
 }
 
-// Deprecated: [TODO] figure out v2 api path
-func SearchTagged(ctx context.Context, tagId int, page int, sort Sort) (*SearchResp, error) {
-	url := toUrl(ApiUrl)
-	url.Path = API_SEARCH_TAGGED
-
-	q := url.Query()
-	q.Add("tag_id", strconv.Itoa(tagId))
-	if page > 0 {
-		q.Add("page", strconv.Itoa(page))
-	}
+// SearchTagged searches galleries by tag id
+func SearchTagged(ctx context.Context, tagId int, page int, sort Sort) (*api.PaginatedResponseGalleryListItem, error) {
+	var sortParam *api.GetGalleriesByTagApiV2GalleriesTaggedGetParamsSort
 	if sort != "" {
-		q.Add("sort", sort)
+		s := api.GetGalleriesByTagApiV2GalleriesTaggedGetParamsSort(sort)
+		sortParam = &s
 	}
-	url.RawQuery = q.Encode()
+	var pageParam *int
+	if page > 0 {
+		pageParam = &page
+	}
+	params := api.GetGalleriesByTagApiV2GalleriesTaggedGetParams{
+		TagId: tagId,
+		Sort:  sortParam,
+		Page:  pageParam,
+	}
+	resp, err := apiClient.GetGalleriesByTagApiV2GalleriesTaggedGetWithResponse(ctx, &params)
+	if err != nil {
+		return nil, err
+	}
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("unexpected status: %s", resp.Status())
+	}
+	return resp.JSON200, nil
+}
 
-	return getAndUnmarshalTo[SearchResp](ctx, url.String(), nil)
+// LookupTags looks up tags by ids
+func LookupTags(ctx context.Context, ids ...int) (api.Tags, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	strIds := make([]string, len(ids))
+	for i, id := range ids {
+		strIds[i] = strconv.Itoa(id)
+	}
+	params := api.GetTagsByIdsApiV2TagsIdsGetParams{
+		Ids: strings.Join(strIds, ","),
+	}
+	resp, err := apiClient.GetTagsByIdsApiV2TagsIdsGetWithResponse(ctx, &params)
+	if err != nil {
+		return nil, err
+	}
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("unexpected status: %s", resp.Status())
+	}
+	return *resp.JSON200, nil
+}
+
+// GetRelated queries "More Like This" by gallery id
+func GetRelated(ctx context.Context, galleryId int) (*api.RelatedGalleriesResponse, error) {
+	resp, err := apiClient.GetRelatedGalleriesApiV2GalleriesGalleryIdRelatedGetWithResponse(ctx, galleryId)
+	if err != nil {
+		return nil, err
+	}
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("unexpected status: %s", resp.Status())
+	}
+	return resp.JSON200, nil
 }
