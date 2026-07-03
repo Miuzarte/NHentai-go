@@ -15,6 +15,14 @@ const API_URL = "https://nhentai.net"
 
 var ApiUrl = API_URL
 
+// UserAgent 设置请求的 User-Agent,
+// 默认值符合 nhentai API 文档要求
+var UserAgent = "NHentai-go/0.0.0 (https://github.com/Miuzarte/NHentai-go)"
+
+// ApiKey 用于 Authorization: Key <ApiKey>,
+// 留空则不发送该 header
+var ApiKey string
+
 var defaultHostProvider = &hostProvider{}
 
 // 负载均衡到所有 cdn

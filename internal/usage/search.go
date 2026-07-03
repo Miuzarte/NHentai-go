@@ -23,16 +23,7 @@ func UsageSearch() {
 	results := search.Result
 
 	for _, gallery := range results {
-		log.Println(gallery.Title)
-		// all results are a complete gallery,
-		// no more requests needed.
-		// W for NHentai
-		for image, err := range gallery.DownloadThumbsIter(ctx) {
-			if err != nil {
-				log.Fatalln(err)
-			}
-			log.Println(image.String())
-		}
+		log.Println(gallery.JapaneseTitle)
 	}
 
 	// download covers

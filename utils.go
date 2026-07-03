@@ -14,6 +14,10 @@ func get(ctx context.Context, url string, body io.Reader) (*http.Response, []byt
 	if err != nil {
 		return nil, nil, err
 	}
+	req.Header.Set("User-Agent", UserAgent)
+	if ApiKey != "" {
+		req.Header.Set("Authorization", "Key "+ApiKey)
+	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, nil, err
