@@ -19,10 +19,10 @@ var (
 // DownloadThreads 控制图片下载并发数
 var DownloadThreads int
 
+// [TODO] 尝试兼容 [EHentai.TranslateMulti]: 处理 "tag" 域
 type (
-	Tags             []TagResponse
-	GalleryListItems []GalleryListItem
-	TagSet           struct {
+	Tags   []TagResponse
+	TagSet struct {
 		Namespace string
 		Tags      []string
 	}
@@ -163,10 +163,12 @@ func (g *GalleryDetailResponse) DownloadThumbsIter(ctx context.Context) iter.Seq
 	pages := g.pages()
 	items := make([]*downloader.Download, len(pages))
 	for i := range pages {
+		filename := g.ThumbFilename(i)
 		items[i] = downloader.NewDownload(
 			&downloader.Image{
-				Name: g.ThumbFilename(i),
+				Name: filename,
 				P:    i + 1,
+				Type: downloader.ExtToImageType(path.Ext(filename)),
 			},
 			g.ThumbUrl(i),
 		)
@@ -179,10 +181,12 @@ func (g *GalleryDetailResponse) DownloadPagesIter(ctx context.Context) iter.Seq2
 	pages := g.pages()
 	items := make([]*downloader.Download, len(pages))
 	for i := range pages {
+		filename := g.PageFilename(i)
 		items[i] = downloader.NewDownload(
 			&downloader.Image{
-				Name: g.PageFilename(i),
+				Name: filename,
 				P:    i + 1,
+				Type: downloader.ExtToImageType(path.Ext(filename)),
 			},
 			g.PageUrl(i),
 		)
@@ -206,14 +210,18 @@ func (g *GalleryListItem) ThumbUrl() string {
 	return NextThumbHostFn() + p
 }
 
+type GalleryListItems []GalleryListItem
+
 // DownloadCoversIter downloads search result covers using iterator
 func (gs GalleryListItems) DownloadCoversIter(ctx context.Context) iter.Seq2[downloader.Image, error] {
 	items := make([]*downloader.Download, len(gs))
 	for i := range gs {
+		filename := strconv.Itoa(gs[i].Id) + path.Ext(gs[i].Thumbnail)
 		items[i] = downloader.NewDownload(
 			&downloader.Image{
-				Name: strconv.Itoa(gs[i].Id) + path.Ext(gs[i].Thumbnail),
+				Name: filename,
 				P:    i + 1,
+				Type: downloader.ExtToImageType(path.Ext(filename)),
 			},
 			gs[i].ThumbUrl(),
 		)

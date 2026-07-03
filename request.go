@@ -16,7 +16,7 @@ var httpClient = http.Client{
 			Timeout:   30 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}),
-		DisableCompression:    true, // disable gzip
+		DisableCompression:    true, // disable gzip (for what?
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,

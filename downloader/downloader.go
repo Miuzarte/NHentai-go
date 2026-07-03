@@ -7,13 +7,16 @@ import (
 	"iter"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 )
 
-// RequestEditor 由 NHentai 包在 init 时设置,用于注入 User-Agent 和 ApiKey header
+// RequestEditor 由 NHentai 包在 init 时设置,
+// 用于注入 User-Agent 和 ApiKey header
 var RequestEditor func(ctx context.Context, req *http.Request) error
 
-// HttpClient 由 NHentai 包在 init 时设置,复用调优过的 http.Client
+// HttpClient 由 NHentai 包在 init 时设置,
+// 复用调优过的 http.Client
 var HttpClient *http.Client
 
 type ImageType int
@@ -38,6 +41,19 @@ func (it ImageType) String() string {
 		return "png"
 	default:
 		return ""
+	}
+}
+
+func ExtToImageType(ext string) ImageType {
+	switch strings.ToLower(strings.TrimLeft(ext, ".")) {
+	case "webp":
+		return IMAGE_TYPE_WEBP
+	case "jpg", "jpeg":
+		return IMAGE_TYPE_JPEG
+	case "png":
+		return IMAGE_TYPE_PNG
+	default:
+		return IMAGE_TYPE_UNKNOWN
 	}
 }
 
@@ -69,7 +85,9 @@ func (d *download) start(ctx context.Context) {
 	d.err <- err
 }
 
-// get 下载图片字节,通过 RequestEditor 注入 header,通过 HttpClient 发送
+// get 下载图片字节,
+// 通过 RequestEditor 注入 header,
+// 通过 HttpClient 发送
 func get(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

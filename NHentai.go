@@ -21,25 +21,26 @@ func SetApiUrl(url string) {
 	}
 }
 
-const DEFAULT_USER_AGENT = "NHentai-go/0.0.0 (https://github.com/Miuzarte/NHentai-go)"
+const DEFAULT_USER_AGENT = "NHentai-go/0.0.1 (https://github.com/Miuzarte/NHentai-go)"
 
-// userAgent 设置请求的 User-Agent,
-// 默认值符合 nhentai API 文档要求
 var userAgent = DEFAULT_USER_AGENT
 
 // SetUserAgent 设置请求的 User-Agent,
 // 符合 nhentai API 文档要求
+//
+// 留空则不发送
+//
 // 建议格式: `AppName/version (contact or project URL)`
 func SetUserAgent(ua string) {
 	userAgent = ua
 }
 
-// apiKey 用于 Authorization: Key <apiKey>,
-// 留空则不发送该 header
 var apiKey string
 
-// SetApiKey 设置 API Key,用于 Authorization: Key <apiKey> header
-// 留空则不发送该 header
+// SetApiKey 设置 API Key,
+// 用于 Authorization: Key <apiKey> header
+//
+// 留空则不发送
 func SetApiKey(key string) {
 	apiKey = key
 }
@@ -111,7 +112,9 @@ func requestEditor(ctx context.Context, req *http.Request) error {
 	return nil
 }
 
-// initApiClient 创建全局 apiClient;init 时调用,也供 ApiUrl 变更后重建
+// initApiClient 创建全局 apiClient
+//
+// init 时调用, 也供 ApiUrl 变更后重建
 func initApiClient() error {
 	c, err := api.NewClientWithResponses(apiUrl,
 		api.WithHTTPClient(&httpClient),
@@ -124,7 +127,7 @@ func initApiClient() error {
 	return nil
 }
 
-// ReinitClient 重建 apiClient,在修改 ApiUrl 后调用
+// ReinitClient 重建 apiClient, 在修改 ApiUrl 后调用
 func ReinitClient() error {
 	return initApiClient()
 }
