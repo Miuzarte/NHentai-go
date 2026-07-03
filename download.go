@@ -3,6 +3,7 @@ package NHentai
 import (
 	"context"
 	"iter"
+	"path"
 	"strconv"
 	"sync"
 )
@@ -60,24 +61,24 @@ func (d *download) start(ctx context.Context) {
 	d.err <- err
 }
 
-func newCoversDownload(gs Gallerys) (dls []*download) {
+func (gs GallerySearchResults) newThumbsDownload() (dls []*download) {
 	dls = make([]*download, len(gs))
 	for i := range gs {
 		dls[i] = &download{
 			img: &Image{
-				Name: gs[i].CoverFilename(),
+				Name: strconv.Itoa(gs[i].Id) + path.Ext(gs[i].Thumbnail),
 				P:    i + 1,
 			},
-			url: gs[i].CoverUrl(),
+			url: gs[i].ThumbUrl(),
 			err: make(chan error, 1),
 		}
 	}
 	return dls
 }
 
-func newThumbsDownload(g *Gallery) (dls []*download) {
-	dls = make([]*download, len(g.Images.Pages))
-	for i := range g.Images.Pages {
+func (g *Gallery) newThumbsDownload() (dls []*download) {
+	dls = make([]*download, len(g.Pages))
+	for i := range g.Pages {
 		dls[i] = &download{
 			img: &Image{
 				Name: g.ThumbFilename(i),
@@ -90,9 +91,9 @@ func newThumbsDownload(g *Gallery) (dls []*download) {
 	return dls
 }
 
-func newPagesDownload(g *Gallery) (dls []*download) {
-	dls = make([]*download, len(g.Images.Pages))
-	for i := range g.Images.Pages {
+func (g *Gallery) newPagesDownload() (dls []*download) {
+	dls = make([]*download, len(g.Pages))
+	for i := range g.Pages {
 		dls[i] = &download{
 			img: &Image{
 				Name: g.PageFilename(i),

@@ -30,12 +30,12 @@ func get(ctx context.Context, url string, body io.Reader) (*http.Response, []byt
 }
 
 func unmarshalTo[T any](body []byte) (*T, error) {
-	output := new(T)
-	err := json.Unmarshal(body, &output)
+	t := new(T)
+	err := json.Unmarshal(body, &t)
 	if err != nil {
 		return nil, err
 	}
-	return output, nil
+	return t, nil
 }
 
 func getAndUnmarshalTo[T any](ctx context.Context, url string, body io.Reader) (*T, error) {
@@ -50,26 +50,31 @@ func getAndUnmarshalTo[T any](ctx context.Context, url string, body io.Reader) (
 	return t, nil
 }
 
+func unmarshalToSlice[S ~[]E, E any](body []byte) (S, error) {
+	s := make(S, 0)
+	err := json.Unmarshal(body, &s)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func getAndUnmarshalToSlice[S ~[]E, E any](ctx context.Context, url string, body io.Reader) (S, error) {
+	_, b, err := get(ctx, url, body)
+	if err != nil {
+		return nil, err
+	}
+	s, err := unmarshalToSlice[S](b)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
 func toUrl(u string) *url.URL {
 	url, err := url.Parse(u)
 	if err != nil {
 		panic(err)
 	}
 	return url
-}
-
-func getFullType(t string) string {
-	if t == "" {
-		return ""
-	}
-	switch t[0] {
-	case 'w':
-		return "webp"
-	case 'j':
-		return "jpg"
-	case 'p':
-		return "png"
-	default:
-		panic(fmt.Errorf("[FIXME] unknown t: %s", t))
-	}
 }
