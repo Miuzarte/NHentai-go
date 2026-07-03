@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	NextImageHostFn func() string
-	NextThumbHostFn func() string
+ 	NextImageHostFn = func() string { return "" }
+ 	NextThumbHostFn = func() string { return "" }
 )
 
 // DownloadThreads 控制图片下载并发数

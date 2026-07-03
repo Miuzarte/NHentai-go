@@ -98,6 +98,9 @@ func get(ctx context.Context, url string) ([]byte, error) {
 			return nil, err
 		}
 	}
+	if HttpClient == nil {
+ 		return nil, fmt.Errorf("downloader.HttpClient is nil")
+ 	}
 	resp, err := HttpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -183,7 +186,7 @@ type limiter struct {
 
 func newLimiter(threads int) *limiter {
 	return &limiter{
-		sem: make(chan struct{}, threads),
+		sem: make(chan struct{}, max(1, threads)),
 	}
 }
 

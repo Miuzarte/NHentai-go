@@ -15,6 +15,9 @@ const API_URL = "https://nhentai.net"
 
 var apiUrl = API_URL
 
+// SetApiUrl 设置站点 base URL
+//
+// 更新 URL 后需要调用 [ReinitClient] 以应用
 func SetApiUrl(url string) {
 	if url != "" {
 		apiUrl = url
@@ -228,7 +231,7 @@ func LookupTags(ctx context.Context, ids ...int) (api.Tags, error) {
 	if resp.JSON200 == nil {
 		return nil, fmt.Errorf("unexpected status: %s", resp.Status())
 	}
-	return *resp.JSON200, nil
+	return api.Tags(*resp.JSON200), nil
 }
 
 // GetRelated queries "More Like This" by gallery id
