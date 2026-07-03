@@ -5,6 +5,7 @@ import (
 	"log"
 
 	nhentai "github.com/Miuzarte/NHentai-go"
+	"github.com/Miuzarte/NHentai-go/api"
 )
 
 func UsageSearch() {
@@ -14,24 +15,17 @@ func UsageSearch() {
 	defer cancel()
 
 	page := 0
-	sort := "" // [nhentai.SORT_POPULAR] | [nhentai.SORT_DATE]
+	sort := nhentai.Sort("") // [nhentai.SORT_POPULAR] | [nhentai.SORT_DATE]
 	search, err := nhentai.Search(ctx, keyword, page, sort)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	results := search.Result
+	results := api.GalleryListItems(search.Result)
 
 	for _, gallery := range results {
-		log.Println(gallery.Title)
-		// all results are a complete gallery,
-		// no more requests needed.
-		// W for NHentai
-		for image, err := range gallery.DownloadThumbsIter(ctx) {
-			if err != nil {
-				log.Fatalln(err)
-			}
-			log.Println(image.String())
+		if gallery.JapaneseTitle != nil {
+			log.Println(*gallery.JapaneseTitle)
 		}
 	}
 

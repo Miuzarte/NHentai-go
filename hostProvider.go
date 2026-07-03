@@ -14,14 +14,14 @@ type HostProvider interface {
 }
 
 type hostProvider struct {
-	i1 atomic.Uintptr
-	i2 atomic.Uintptr
+	imageCounter atomic.Uintptr
+	thumbCounter atomic.Uintptr
 }
 
 func (up *hostProvider) NextImageHost() string {
-	return constant.ImageHosts[int(up.i1.Add(1))%len(constant.ImageHosts)]
+	return constant.ImageHosts[int(up.imageCounter.Add(1))%len(constant.ImageHosts)]
 }
 
 func (up *hostProvider) NextThumbHost() string {
-	return constant.ThumbHosts[int(up.i2.Add(1))%len(constant.ThumbHosts)]
+	return constant.ThumbHosts[int(up.thumbCounter.Add(1))%len(constant.ThumbHosts)]
 }
