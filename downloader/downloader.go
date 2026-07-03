@@ -99,17 +99,21 @@ func get(ctx context.Context, url string) ([]byte, error) {
 		}
 	}
 	if HttpClient == nil {
- 		return nil, fmt.Errorf("downloader.HttpClient is nil")
- 	}
+		return nil, fmt.Errorf("downloader.HttpClient is nil")
+	}
 	resp, err := HttpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected http status code: %s", resp.Status)
 	}
-	return io.ReadAll(resp.Body)
+	return b, nil
 }
 
 // NewDownload 创建一个下载任务(供 api 包构造 []*Download)
